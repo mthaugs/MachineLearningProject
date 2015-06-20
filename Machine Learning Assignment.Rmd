@@ -1,0 +1,129 @@
+---
+title: "Machine Learning Assignment"
+author: "M. Tyler Haugseth"
+output: html_document
+---
+```{r echo=FALSE, message=FALSE}
+library(caret)
+library(randomForest)
+# enable multi-core processing
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+```
+# Summary
+This is the write-up submission for the Practical Machine Learning course project in conjuction with the prediction submission on the course website.  
+
+The data for this project come from the paper:  
+*Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.*  
+
+The deliverable in this project was to provide 20 submissions that predict the exercises being performed in each of 20 observations provided in the prediction data file.  
+
+In addition, the project asks for:  
+*Does the submission build a machine learning algorithm to predict activity quality from activity monitors?*
+*You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did.*
+
+## Final Model  
+The final model consisted of 53 variables of the original 160 variables. Any book keeping variables such as the window, the user, or the time were removed. All columns that included missing values or NA were also removed.  
+
+Since the authors of the paper using this data performed a random forest analysis, I also used random forest for my starting and final model due to the high level of accuracy from the results (>99%).  
+
+# Getting and Cleaning the Data with Features
+The data links for the training and test data were downloaded to a local directory. Any missing values were filled with `NA` in order to ease data cleaning.
+
+```{r}
+trainSet <- read.csv("data/pml-training.csv",na.strings=c("NA",""))
+testSet <- read.csv("data/pml-testing.csv",na.strings=c("NA",""))
+```
+
+The data included summary records that include additional data that are not necessary for the analysis. These are identified as records where `new_window` is yes and they are removed from the data. 
+```{r}
+trainSet <- trainSet[trainSet$new_window=="no",] #kept records where window == no
+```
+
+The data also include a variety of unnecessary columns. The first seven columns of the data are book keeping columns that are not relevant to the machine learning algorithm (user, time, window). Another 100 columns contain missing values and do not contribute to the algorithm. 
+
+```{r}
+elimColumns <- (colSums(is.na(trainSet)) == 0)
+elimColumns[c(1:7)] <- FALSE
+```
+
+For the remaining columns, I checked for near zero values to ensure no other columns could be removed. No other values met the criteria to be removed. 
+
+```{r}
+nsv <- nearZeroVar(finalTraining,saveMetrics=TRUE)
+nsv
+```
+
+At this point, the 52 variable features along with the classe dependent variable were kept. The 52 features is a significant reduction in complexity from the origial 159 predictors. 
+
+# Training Data for Analysis
+
+For the training data, I used the caret package with `createDataPartition` to cut the provided training data set into a training set and testing set. The training set uses 70% of the data to train the prediction algorithm. 
+
+```{r}
+set.seed(10)
+inTrain <- createDataPartition(y=finalTraining$classe,p=0.7, list=FALSE)
+training <- finalTraining[inTrain,]; testing <- finalTraining[-inTrain,]
+```
+
+# Prediction Approach: Random Forest
+
+The paper associated with the training data used a random forest prediction method to train the data. Therefore I chose the random forest method first as a candidate for the prediction algorithm.  
+
+For the model tuning, I started with a fairly standard approach using a cross-validated method with `k=5` folds.
+
+```{r}
+control <- trainControl(method = "cv",number=10)
+```
+
+Using the cross-validated model tuning, I fed the training set without any more additional processing into the random forest algorithm. The resulting algorithm returned a high accuracy and kappa of 99%. With these results, I elected to continue with model prediction rather than evalute more models.
+
+```{r}
+#modFit <- train(training$classe ~ ., method="rf", trControl=control, data=training) 
+#commented and used the cached model since evaluation takes a long time
+modfit
+```
+
+I ran the model fit against the testing set (30% of provided training data) and produced a confusion matrix to assess the goodness of fit of the model.
+
+```{r}
+pred <- predict(modFit,testing); testing$predRight <- pred==testing$classe
+print(confusionMatrix(pred, testing$classe))
+```
+
+The prediction table was extremely accurate with an `accuracy = 0.99` and `kappa=0.99`. I felt there was not a need to continue producing models and used the prediction model to predict the testing set classes.  
+
+## Out of Sample Error
+
+The out of sample error is simply the error rate on the internal test set of the training data. This is:  
+$$ OOSE = 1 - Accuracy $$  
+Thus, the out of sample error estimate for this prediction model is only `0.0073`, which is an extremely good result for a prediction model. Next, I performed the final prediction on the provided test set.
+
+# Evaluating the Test Set
+
+First, I processed the test set to match the training model features. 
+
+```{r}
+testRun <- testSet[,elimColumns]
+```
+
+Then, I used the training model to fit the test set and provide the predictions.
+
+```{r}
+pred <- predict(modFit,newdata=testRun)
+answers <- as.character(pred)
+answers
+```
+
+# Validating the Results on Coursera
+
+These predicted results were fed into the Coursera grading sheet. The results indicated all the predictions were accurate. Fortunately, I was able to limit the amount of model exploration to the first random forest. This is unlikely to be the case for most real-world data analysis. The random forest models are computationally heavy and took a long time. 
+
+```{r echo=FALSE}
+stopCluster(cl)
+```
+
+
+
+
